@@ -1,5 +1,6 @@
 *.venv/
 .idea/
 **__pycache__**
-graph.png
+*.png
+*.bmp
 phys_graphs/
