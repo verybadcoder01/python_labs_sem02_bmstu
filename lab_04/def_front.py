@@ -3,14 +3,15 @@ import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                              QTableWidget, QTableWidgetItem, QLineEdit, QPushButton, QLabel,
                              QFrame, QSizePolicy)
-from PyQt5.QtCore import Qt, QPoint, pyqtSignal
+from PyQt5.QtCore import Qt, QPoint, pyqtSignal, QPointF
 from PyQt5.QtGui import QPainter, QPen, QColor
 from PyQt5.QtWidgets import QMessageBox
 
-from back import build_triangle, find_closest_point
+from def_back import find_min_circle, find_closest_point, dist
 
 WRONG_COORD_NUMBER = Exception("Некорректное число координат")
 WRONG_SCOPE = Exception("Все координаты должны быть в отрезке [-50; 50]")
+
 
 def show_message(title, message):
     msg_box = QMessageBox()
@@ -20,6 +21,7 @@ def show_message(title, message):
     msg_box.setStandardButtons(QMessageBox.Ok)
     msg_box.exec_()
 
+
 class PointsCanvas(QWidget):
     point_added = pyqtSignal(tuple)
     point_removed = pyqtSignal(int)
@@ -28,7 +30,7 @@ class PointsCanvas(QWidget):
         super().__init__()
         self.setMinimumSize(600, 400)
         self.points = []
-        self.triangle_sides = []
+        self.circle_points_inds = []
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         self.logical_x_min = -50.0
@@ -50,10 +52,8 @@ class PointsCanvas(QWidget):
         widget_y = (self.logical_y_max - y) / (self.logical_y_max - self.logical_y_min) * h
         return widget_x, widget_y
 
-    def set_triangle(self, point_a, point_b, point_c):
-        self.triangle_sides = [[point_a[0], point_a[1], point_b[0], point_b[1]],
-                               [point_b[0], point_b[1], point_c[0], point_c[1]],
-                               [point_c[0], point_c[1], point_a[0], point_a[1]]]
+    def set_circle(self, point_a, point_b, point_c):
+        self.circle_points_inds = [point_a, point_b, point_c]
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -69,8 +69,6 @@ class PointsCanvas(QWidget):
             self.points.pop(closest_point)
             self.point_removed.emit(closest_point)
             self.update()
-
-
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -89,16 +87,18 @@ class PointsCanvas(QWidget):
             wx, wy = self.logical_to_widget(x, y)
             painter.drawPoint(int(wx), int(wy))
 
-        painter.setPen(QPen(Qt.blue, 3))
-        for side in self.triangle_sides:
-            widget_side = []
-            x_log, y_log = self.logical_to_widget(side[0], side[1])
-            widget_side.append(int(x_log))
-            widget_side.append(int(y_log))
-            x_log, y_log = self.logical_to_widget(side[2], side[3])
-            widget_side.append(int(x_log))
-            widget_side.append(int(y_log))
-            painter.drawLine(widget_side[0], widget_side[1], widget_side[2], widget_side[3])
+        if len(self.circle_points_inds) == 3:
+            painter.setPen(QPen(Qt.blue, 3))
+            center_logical = self.points[self.circle_points_inds[0]]
+            point_b_logical = self.points[self.circle_points_inds[1]]
+            center_widget = self.logical_to_widget(center_logical[0], center_logical[1])
+            point_b_widget = self.logical_to_widget(point_b_logical[0], point_b_logical[1])
+            rad = dist(center_widget, point_b_widget)
+            painter.drawEllipse(
+                QPointF(center_widget[0], center_widget[1]),
+                rad,
+                rad
+            )
 
 
 class MainWindow(QMainWindow):
@@ -146,7 +146,7 @@ class MainWindow(QMainWindow):
         self.btn_clear.clicked.connect(self.clear_points)
         self.canvas.point_added.connect(self.add_table_row)
         self.canvas.point_removed.connect(self.remove_table_row)
-        self.btn_calc.clicked.connect(self.find_triangle)
+        self.btn_calc.clicked.connect(self.find_circle)
         self.btn_clear_result.clicked.connect(self.clear_result)
 
     def add_point(self):
@@ -154,7 +154,8 @@ class MainWindow(QMainWindow):
             point = list(map(lambda x: float(x), self.input_point.text().split(" ")))
             if len(point) != 2:
                 raise WRONG_COORD_NUMBER
-            elif point[0] < self.canvas.logical_x_min or point[0] > self.canvas.logical_x_max or point[1] < self.canvas.logical_y_min or point[1] > self.canvas.logical_y_max:
+            elif point[0] < self.canvas.logical_x_min or point[0] > self.canvas.logical_x_max or point[
+                1] < self.canvas.logical_y_min or point[1] > self.canvas.logical_y_max:
                 raise WRONG_SCOPE
         except Exception as e:
             s = "Некорректный ввод"
@@ -180,17 +181,20 @@ class MainWindow(QMainWindow):
         self.canvas.points.clear()
         self.canvas.update()
 
-    def find_triangle(self):
+    def find_circle(self):
         points = self.canvas.points
         if len(points) < 3:
             show_message("Ошибка", "Слишком мало точек. Необходимо хотя бы 3")
             return
-        ind_a, ind_b, ind_c = build_triangle(points)
-        self.canvas.set_triangle(points[ind_a], points[ind_b], points[ind_c])
+        ind_a, ind_b, ind_c = find_min_circle(points)
+        if ind_a == -1 and ind_b == -1 and ind_c == -1:
+            show_message("Результат", "Нет 3 точек, на которых можно построить окружность")
+            return
+        self.canvas.set_circle(ind_a, ind_b, ind_c)
         self.canvas.update()
 
     def clear_result(self):
-        self.canvas.triangle_sides = []
+        self.canvas.circle_points_inds = []
         self.canvas.update()
 
 
