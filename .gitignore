@@ -2,5 +2,6 @@
 .idea/
 **__pycache__**
 *.png
+*.jpg
 *.bmp
 phys_graphs/
